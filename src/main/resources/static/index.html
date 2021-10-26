@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>在线定时任务管理系统</title>
+</head>
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+<!-- 引入样式 -->
+<link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+<!-- 引入组件库 -->
+<script src="https://unpkg.com/element-ui/lib/index.js"></script>
+<!--引入通信框架-->
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+<body>
+  <div id="app">
+      <h1 style="background-color: #409EFF;text-align: center;">定时任务管理系统</h1>
+      <!--查询表单-->
+      <el-form :inline="true"  :model="searchform"  ref="searchform" class="demo-form-inline">
+          <el-form-item label="任务ID">
+              <el-input v-model="searchform.id" placeholder="任务ID"></el-input>
+          </el-form-item>
+          <el-form-item label="任务名称">
+              <el-input v-model="searchform.jobName" placeholder="任务名称"></el-input>
+          </el-form-item>
+          <el-form-item>
+              <el-button type="primary" icon="el-icon-search" @click="queryJobs">查询</el-button>
+              <el-button type="primary" @click="addJob">新增</el-button>
+          </el-form-item>
+          <el-form-item label="当前时间">
+              <el-time-select style="width: 140px;"
+                              type="date"
+                      v-model="startworktime"
+                              format="HH:mm:ss">
+                  value-format="timestamp"
+                      placeholder="上班时间">
+              </el-time-select>
+          </el-form-item>
+          <el-form-item label="下班时间">
+              <el-time-select style="width: 140px;"
+                      v-model="endworktime"
+                              type="date"
+                      format="HH:mm:ss">
+                     value-format="timestamp"
+                      placeholder="下班时间">
+              </el-time-select>
+          </el-form-item>
+          <el-form-item label="下班倒计时:">
+              <template slot-scope="scope">
+                  <span>{{hour}}:</span>
+                  <span>{{minute}}:</span>
+                  <span>{{secenod}}</span>
+              </template>
+              </el-time-select>
+          </el-form-item>
+      </el-form>
+      <!--表格-->
+      <el-table
+              :data="jobs"
+              border
+              stripe
+              :default-sort = "{prop: 'id', order: 'ascending'}"
+              :header-cell-style="{background:'#F3F4F7',color:'#555'}"
+              height=70vh
+              style="width: 100%">
+              size="mini"
+          <el-table-column prop="id"  fixed="left" label="任务ID" width="80px"></el-table-column>
+          <el-table-column prop="beanName" label="任务bean" width="100px"></el-table-column>
+          <el-table-column prop="jobName" label="任务名称" width="120px"></el-table-column>
+          <el-table-column prop="methodName" label="任务方法" width="100px"></el-table-column>
+          <el-table-column  label="cron表达式"width="180">
+              <template slot-scope="scope">
+                  <span style="margin-left: 10px">{{ scope.row.cronExpression }}</span>
+              </template>
+          </el-table-column>
+          <el-table-column label="状态" width="160px">
+              <template slot-scope="scope">
+                  <el-switch
+                          v-model="scope.row.isPause"
+                          active-color="#5CB87A"
+                          inactive-color="#F56C6C"
+                          :active-value=0
+                          :inactive-value=1
+                          active-text="开启"
+                          inactive-text="关闭">
+                  </el-switch>
+              </template>
+          </el-table-column>
+          <el-table-column prop="createTime" label="创建时间" width="180px"></el-table-column>
+          <el-table-column label="操作">
+              <template slot-scope="scope">
+                  <el-button type="primary"  size="mini"
+                          @click="modifyJob(scope.$index, scope.row)">编辑</el-button>
+                  <el-button size="mini"
+                          type="danger"
+                          @click="deleteJob(scope.$index, scope.row)">删除</el-button>
+              </template>
+          </el-table-column>
+      </el-table>
+      <div  style="height:8vh;background-color: #1A1A1A;text-align: center;color:#FEFEFC;font-size: 10px;">
+          <span>developed by @elite</span>
+          <span><el-link href="https://github.com/Jherolover/" >github地址</el-link></span>
+      </div>
+      <!--新增弹框-->
+      <el-dialog :title="jobTitle" :visible.sync="dialogFormVisible" width="40%"  >
+          <el-form :model="jobFrom"  :rules="rules" ref="jobFrom" size="mini" label-position="left">
+              <el-form-item label="任务bean"  prop="beanName" :label-width="formLabelWidth">
+                  <el-input v-model="jobFrom.beanName" autocomplete="off"></el-input>
+              </el-form-item>
+              <el-form-item label="任务名称"   prop="jobName" :label-width="formLabelWidth">
+                  <el-input v-model="jobFrom.jobName" autocomplete="off"></el-input>
+              </el-form-item>
+              <el-form-item label="任务方法"   prop="methodName" :label-width="formLabelWidth">
+                  <el-input v-model="jobFrom.methodName" autocomplete="off"></el-input>
+              </el-form-item>
+              <el-form-item label="cron表达式"  prop="cronExpression"  :label-width="formLabelWidth">
+                  <el-input v-model="jobFrom.cronExpression" autocomplete="off"></el-input>
+              </el-form-item>
+              <el-form-item label="任务状态" prop="isPause" :label-width="formLabelWidth">
+                  <el-switch v-model="jobFrom.isPause"
+                             :active-value=0
+                             :inactive-value=1></el-switch>
+              </el-form-item>
+          </el-form>
+          <div style="text-align: center" slot="footer" class="dialog-footer">
+              <el-button @click="cancelAddJob('jobFrom')">取 消</el-button>
+              <el-button type="primary" @click="submitJob('jobFrom')">确 定</el-button>
+          </div>
+      </el-dialog>
+
+  </div>
+</body>
+</html>
+<script>
+  new Vue({
+      el:"#app",
+      data:{
+             startworktime:'',
+             endworktime:'',
+             countdowntime:'',
+             hour:'',
+             minute:'',
+             secenod:'',
+             //间隔时间
+             interval:'',
+             jobs: [],
+             searchform: {
+                 id:'',
+                 jobName: '',
+                 isPause:''
+
+             },
+             jobTitle:"",
+             formLabelWidth:"160px",
+             dialogFormVisible:false,
+             jobFrom:{
+                 id:'',
+                 beanName:'',
+                 jobName: '',
+                 methodName:'',
+                 cronExpression:'',
+                 isPause:0
+             },
+           rules: {
+               beanName: [
+                   {required: true, message: '请输入任务bean', trigger: 'blur'}
+               ],
+               jobName: [
+                   {required: true, message: '请输入任务名称', trigger: 'blur'}
+               ],
+               cronExpression: [
+                   {required: true, message: '请输入cron表达式', trigger: 'blur'}
+               ],
+               methodName: [
+                   {required: true, message: '请输入方法名称', trigger: 'blur'}
+               ],
+               isPause: [
+                   {required: true, message: '选择状态', trigger: 'blur'}
+               ]
+           }
+
+      },
+      mounted(){
+         this.getAllJobs();
+         this.intiTime();
+      },
+
+      methods:{
+          //初始化时间
+          intiTime(){
+              var nowdate = new Date();
+              this.endworktime  = new Date(nowdate.getFullYear(),nowdate.getMonth(),nowdate.getDate(),18,0,0).getTime();
+              setInterval(()=>{
+                  //初始化时间
+                  let startworktime = new Date().getTime();
+                  this.startworktime = startworktime;
+                  let interval = this.endworktime - this.startworktime;
+                  this.hour = Math.floor(interval/1000/60/60);
+                  this.minute = Math.floor((interval/1000/60)%60);
+                  this.secenod = Math.floor((interval/1000)%60);
+              },1000);
+
+          },
+          //初始化加载jobs
+          getAllJobs(){
+              axios.get("/quartz/job/getAllJobs?id="+this.searchform.id+'&jobName='+this.searchform.jobName).then(res=>{
+                  console.log(res.data.data)
+                  if(res.status == 200){
+                      this.jobs = res.data.data;
+                  }
+              })
+          },
+          //处理编辑
+          modifyJob(index, row) {
+              this.jobTitle="编辑任务"
+              this.dialogFormVisible = true;
+              this.jobFrom = row;
+          },
+          //处理删除
+          deleteJob(index, row) {
+              this.$confirm("你确定删除当前任务么",'提示',{
+                  confirmButtonText: '确定',
+                  cancelButtonText: '取消',
+                  type: 'warning'
+              }).then(()=>{
+                  axios.delete("/quartz/job/deleteJob?jobid="+row.id).then((res =>{
+                      this.$notify({
+                          title: res.status===200?"删除成功":"删除失败",
+                          message: res.data.msg,
+                          type: res.status===200?"success":"error"
+                      });
+                      this.getAllJobs();
+                  }))
+              }).catch(()=>{
+                  this.$notify({
+                      message: "已经取消删除",
+                      type: "info"
+                  });
+              })
+
+          },
+          //表单查询
+          queryJobs() {
+             this.getAllJobs();
+          },
+          //新增任务
+          addJob(){
+              this.jobTitle = "编辑任务"
+              this.resetForm();
+              console.log('新增job任务')
+              this.dialogFormVisible = true;
+          },
+          //取消添加任务
+          cancelAddJob(){
+              //取消重置表单数据
+              this.resetForm();
+              this.dialogFormVisible = false;
+              this.jobTitle = "";
+
+          },
+          //修改任务
+          updateJob(){
+              axios.put("/quartz/job/updatejob",this.jobFrom).then((res =>{
+                  this.$notify({
+                      title: res.status===200?"修改成功":"修改失败",
+                      message: res.data.msg,
+                      type: res.status===200?"success":"error"
+                  });
+                  this.dialogFormVisible = false;
+                  this.jobTitle = "";
+                  this.resetForm();
+                  this.getAllJobs();
+              }))
+          },
+          //添加任务提交
+          submitJob(formName){
+              this.$refs[formName].validate((valid) => {
+                  if (valid) {
+                      //id不为空则进行更新
+                      if(this.jobFrom.id){
+                        this.updateJob();
+                        return;
+                      }
+                      //提交
+                      axios.post("/quartz/job/addJob",this.jobFrom).then((res)=>{
+                           if(res.status == 200 ){
+                               this.$notify({
+                                   title: "添加成功",
+                                   message: res.data.msg,
+                                   type: "success"
+                               });
+                               this.jobTitle = "";
+                               this.resetForm();
+                               this.getAllJobs();
+                               this.dialogFormVisible = false;
+                           }else {
+                               this.$notify({
+                                   message: res.data.msg,
+                                   type: "error"
+                               });
+                           }
+
+                       }).catch(()=>{
+
+                       });
+                  } else {
+                      this.$notify({
+                          message: "请填写完整再进行提交！",
+                          type: "info"
+                      });
+                      return false;
+                  }
+              });
+          },
+          //重置表单
+          resetForm() {
+              this.jobFrom = {
+                      beanName:'',
+                      jobName: '',
+                      methodName:'',
+                      cronExpression:'',
+                      isPause:0
+              }
+          }
+      }
+  });
+</script>
+<style scoped>
+
+</style>
